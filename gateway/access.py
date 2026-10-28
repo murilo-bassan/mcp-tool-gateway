@@ -218,7 +218,8 @@ def from_api_key(api_key: str) -> Principal:
 DEMO_ROLES = [
     Role(name="admin", description="Everything, including governance.", tool_globs=["*"], admin_perms=list(ADMIN_PERMS)),
     Role(name="analyst", description="Reads every domain; proposes new tools.",
-         tool_globs=["invoices.*", "grants.*", "meta.*"], admin_perms=["registry.write"]),
+         tool_globs=["invoices.*", "grants.*", "meta.*", "registry.list", "registry.propose"],
+         admin_perms=["registry.write"]),
     Role(name="auditor", description="Reads the trail; calls nothing.", tool_globs=["meta.*"], admin_perms=["audit.read"]),
     Role(name="grants-bot", description="Service account for the grants domain only.", tool_globs=["grants.*"]),
 ]
