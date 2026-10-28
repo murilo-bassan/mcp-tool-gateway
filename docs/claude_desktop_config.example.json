@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "toolgate": {
+      "command": "python",
+      "args": ["/absolute/path/to/mcp-tool-gateway/server.py"],
+      "env": {
+        "GATEWAY_DATA_DIR": "/absolute/path/to/mcp-tool-gateway/data",
+        "GATEWAY_MCP_PRINCIPAL": "analyst"
+      }
+    }
+  }
+}

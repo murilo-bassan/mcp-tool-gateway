@@ -1,0 +1,14 @@
+services:
+  panel:
+    build: .
+    ports:
+      - "127.0.0.1:8600:8600"
+    environment:
+      GATEWAY_DEMO_SEED: "true"
+      # GATEWAY_SECRET_KEY: set a real Fernet key outside of demos
+    volumes:
+      - gateway-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  gateway-data:
