@@ -7,12 +7,12 @@ Per-tool RBAC · encrypted secrets · four-eyes dynamic tools · tamper-evident 
 
 ![python](https://img.shields.io/badge/python-3.11%2B-000?style=flat-square&labelColor=000&color=c6ff00)
 ![mcp](https://img.shields.io/badge/MCP-2.2-000?style=flat-square&labelColor=000&color=a58bff)
-![tests](https://img.shields.io/badge/tests-81%20passing-000?style=flat-square&labelColor=000&color=c6ff00)
+![tests](https://img.shields.io/badge/tests-95%20passing-000?style=flat-square&labelColor=000&color=c6ff00)
 ![license](https://img.shields.io/badge/license-MIT-000?style=flat-square&labelColor=000&color=2a2a2a)
 
 [English](#english) · [Português](#português)
 
-<img src="docs/screenshots/overview.png" alt="Overview" width="100%">
+<img src="docs/screenshots/chat.png" alt="Chat" width="100%">
 
 </div>
 
@@ -42,6 +42,7 @@ or from another backend — passes through the same door.
 | **Secrets done right** | Fernet at rest, `{{secret:name}}` references, resolved per caller at call time, never shown back. |
 | **Tamper-evident audit** | SHA-256 hash chain over masked events; the panel verifies it live ([ADR 0005](docs/adr/0005-hash-chained-audit.md)). |
 | **PII masking** | CPF/CNPJ/e-mail/phone/card/tokens masked *before* storage, keeping enough suffix for support. |
+| **Chat over governed tools** | `/api/chat` routes a PT/EN message to a tool, extracts arguments, asks follow-ups for what is missing, executes through the same executor (RBAC + audit) and explains the result. Offline by default; `GATEWAY_LLM_API_KEY` switches to OpenAI-compatible tool calling over the same tools. |
 | **Deterministic intent baseline** | `meta.suggest_tool` ranks tools for a PT/EN request with reasons — the floor LLM routers are benchmarked against in [`llm-routing-eval-lab`](https://github.com/murilo-bassan/llm-routing-eval-lab) ([ADR 0006](docs/adr/0006-deterministic-intent-baseline.md)). |
 | **Production hygiene** | CSRF guard, strict CSP, scrypt, rate limiting, non-root Docker image with healthcheck, CI matrix + container smoke test. |
 
@@ -76,7 +77,7 @@ git clone https://github.com/murilo-bassan/mcp-tool-gateway.git
 cd mcp-tool-gateway
 pip install -r requirements-dev.txt
 
-python -m pytest                      # 81 tests, ~20 s, includes a real stdio MCP round-trip
+python -m pytest                      # 95 tests, ~20 s, includes a real stdio MCP round-trip
 python scripts/demo_traffic.py        # optional: fill the panel with activity
 python -m uvicorn web.app:app --port 8600   # panel → http://localhost:8600 (admin/admin)
 ```
@@ -157,13 +158,14 @@ backend — passa pela mesma porta.
 - **Secrets**: criptografados com Fernet, referenciados como `{{secret:nome}}`, resolvidos por quem chama, nunca exibidos de volta.
 - **Auditoria à prova de adulteração**: cadeia de hashes SHA-256 sobre eventos já mascarados; o painel verifica ao vivo.
 - **Mascaramento de dados pessoais**: CPF, CNPJ, e-mail, telefone, cartão e tokens mascarados antes de gravar.
+- **Chat sobre as tools governadas**: pergunta em PT ou EN, escolhe a tool, extrai os argumentos, pergunta o que falta e executa pelo mesmo executor (permissão + auditoria). Interface com opção PT-BR/EN.
 - **Baseline determinístico de intenção**: `meta.suggest_tool` sugere a tool com as razões — é o piso contra o qual os roteadores com LLM são comparados no [`llm-routing-eval-lab`](https://github.com/murilo-bassan/llm-routing-eval-lab).
 
 ### Como rodar
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest                              # 81 testes, inclui ida e volta MCP real via stdio
+python -m pytest                              # 95 testes, inclui ida e volta MCP real via stdio
 python scripts/demo_traffic.py                # opcional: gera atividade para o painel
 python -m uvicorn web.app:app --port 8600     # painel em http://localhost:8600 (admin/admin)
 python scripts/mcp_call.py suggest "quais convênios estão atrasados em MS?"

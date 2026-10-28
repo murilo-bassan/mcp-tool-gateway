@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from gateway import access, audit, catalog, executor, intents, registry, secrets_store
+from gateway import access, audit, catalog, chat, executor, intents, registry, secrets_store
 from gateway.config import get_settings
 from gateway.errors import AuthFailed, GatewayError, InvalidArguments, InvalidDefinition, NotFound, PermissionDenied, \
     RateLimited
@@ -144,6 +144,19 @@ class SuggestBody(BaseModel):
 def suggest(body: SuggestBody, principal: access.Principal = Depends(mutating)) -> list[dict[str, Any]]:
     visible = [t for t in catalog.visible_to(principal.role.allows_tool) if not t.name.startswith(("meta.", "registry."))]
     return [{"tool": s.tool, "score": s.score, "reasons": list(s.reasons)} for s in intents.suggest(body.request, visible)]
+
+
+class ChatBody(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+    lang: str = Field(default="pt", pattern="^(pt|en)$")
+    pending: dict[str, Any] | None = None
+
+
+@app.post("/api/chat")
+def chat_endpoint(body: ChatBody, principal: access.Principal = Depends(mutating)) -> dict[str, Any]:
+    engine = chat.engine()
+    reply = engine.reply(principal, body.message, body.lang, body.pending)  # type: ignore[arg-type]
+    return {"engine": engine.engine, **reply.__dict__}
 
 
 @app.post("/v1/call")

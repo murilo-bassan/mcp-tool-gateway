@@ -42,7 +42,7 @@ def search_agreements(args: dict[str, Any], ctx: CallContext) -> dict[str, Any]:
 
 @native("grants.get_agreement", title="Get one agreement", description="Returns one agreement by id (e.g. AG-2024-1001).",
         schema=object_schema({"id": {"type": "string", "pattern": "^AG-\\d{4}-\\d+$"}}, ["id"]),
-        keywords=("convenio", "detalhe", "agreement"))
+        keywords=("detalhe do convenio", "agreement details"))
 def get_agreement(args: dict[str, Any], ctx: CallContext) -> dict[str, Any]:
     for row in synthetic.agreements():
         if row["id"] == args["id"]:
@@ -53,7 +53,7 @@ def get_agreement(args: dict[str, Any], ctx: CallContext) -> dict[str, Any]:
 @native("grants.summary_by_state", title="Totals by state",
         description="Agreement count, federal value and disbursement ratio per state, optionally for one program.",
         schema=object_schema({"program_id": {"type": "string"}}),
-        keywords=("resumo", "total por estado", "panorama", "summary"))
+        keywords=("resumo", "por estado", "total por estado", "panorama", "summary", "by state", "totals"))
 def summary_by_state(args: dict[str, Any], ctx: CallContext) -> dict[str, Any]:
     acc: dict[str, dict[str, float]] = defaultdict(lambda: {"count": 0, "federal_value": 0.0, "disbursed": 0.0})
     for r in synthetic.agreements():
