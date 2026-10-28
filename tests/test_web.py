@@ -59,6 +59,16 @@ def test_audit_requires_permission_for_others(client):
     assert client.get("/api/audit/verify").status_code == 403
 
 
+def test_audit_by_correlation_is_one_request_and_still_scoped(client):
+    login(client, "auditor")
+    corr = client.post("/api/call", json={"tool": "meta.whoami"}, headers=CSRF).json()["correlation"]
+    client.post("/api/call", json={"tool": "meta.whoami"}, headers=CSRF)
+    rows = client.get(f"/api/audit?correlation={corr}").json()
+    assert rows and {r["correlation"] for r in rows} == {corr}
+    login(client, "analyst")  # someone else's request is invisible without audit.read
+    assert client.get(f"/api/audit?correlation={corr}").json() == []
+
+
 def test_consumer_flow(client):
     login(client)
     created = client.post("/api/access/consumers", json={"id": "grants-sync", "role": "grants-bot"}, headers=CSRF).json()

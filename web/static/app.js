@@ -8,6 +8,10 @@ const state = { me: null, tools: [], selected: null, route: "chat", param: null,
 // ------------------------------------------------------------------ i18n (EN source strings are the keys)
 
 const PT = {
+ "proposing needs the registry.write permission": "propor exige a permissão registry.write",
+ "open in the console": "abrir no console", "no tool matches": "nenhuma tool encontrada", "admin perms": "permissões de admin",
+ "see this request in the audit trail": "ver esta requisição na trilha de auditoria", "request": "requisição",
+ "show all": "mostrar tudo", "No events.": "Nenhum evento.",
  "Conversations": "Conversas", "+ new": "+ nova", "messages": "mensagens", "message": "mensagem", "waiting": "aguardando",
  "Rename": "Renomear", "Delete": "Excluir", "New title": "Novo título", "Delete this conversation?": "Excluir esta conversa?",
  "No conversations yet.": "Nenhuma conversa ainda.",
@@ -74,7 +78,7 @@ const PT = {
  "Yours": "Seus",
  "Shared (__system__)": "Compartilhados (__system__)",
  "Store a secret": "Guardar um secret",
- "shared with everyone (needs secrets.write)": "compartilhado com todos (requer secrets.write)",
+ "shared with everyone": "compartilhado com todos",
  "Encrypt & store": "Criptografar e guardar",
  "Tool": "Tool",
  "Errors": "Erros",
@@ -281,6 +285,13 @@ async function sendChat(text) {
   render();
 }
 
+function correlationLink(id) {
+  if (!id) return null;
+  return can("audit.read")
+    ? h("a", { class: "hash link", href: `#/audit/${id}`, title: t("see this request in the audit trail") }, `${id} ↗`)
+    : h("span", { class: "hash" }, id);
+}
+
 const avatar = () => h("div", { class: "avatar" }, h("i"), h("i"), h("i"), h("i"));
 
 function bubble(m) {
@@ -290,7 +301,7 @@ function bubble(m) {
     m.tool ? h("span", { class: "chip violet" }, m.tool) : null,
     m.error ? h("span", { class: "chip bad" }, m.error.error) : ok ? h("span", { class: "chip ok" }, h("i", { class: "dot" }), "ok") : null,
     m.pending ? h("span", { class: "chip warn" }, t("waiting for your answer")) : null,
-    m.correlation ? h("span", { class: "hash" }, m.correlation) : null);
+    correlationLink(m.correlation));
   const details = [];
   if (m.trace?.length) details.push(h("details", {}, h("summary", { class: "label" }, t("how it was answered")), jsonView(m.trace)));
   if (ok) details.push(h("details", {}, h("summary", { class: "label" }, t("raw result")), jsonView(m.result)));
@@ -368,51 +379,55 @@ async function overviewView() {
   let stats = null, chain = null;
   if (can("audit.read")) [stats, chain] = await Promise.all([api("/api/audit/stats"), api("/api/audit/verify")]);
   const calls = stats?.total_calls ?? 0;
-  const errors = stats ? stats.tools.reduce((a, t) => a + t.errors, 0) : 0;
-  const dynamic = tools.filter((t) => t.origin === t("dynamic")).length;
+  const errors = stats ? stats.tools.reduce((a, row) => a + row.errors, 0) : 0;
+  const dynamic = tools.filter((tool) => tool.origin === "dynamic").length;
 
-  const kpi = (label, value, unit) => h("div", { class: "kpi" }, h("div", { class: "label" }, label),
+  const kpi = (label, value, unit) => h("div", { class: "kpi" }, h("div", { class: "label" }, t(label)),
     h("div", { class: "v" }, value, unit ? h("small", {}, unit) : null));
 
   const chainChip = !chain ? h("span", { class: "chip" }, t("audit hidden"))
-    : chain.ok ? h("span", { class: "chip ok" }, h("i", { class: "dot" }), `${t("chain verified")} · ${chain.checked}`)
-      : h("span", { class: "chip bad" }, h("i", { class: "dot" }), `broken at #${chain.first_broken_seq}`);
+    : h("a", { class: chain.ok ? "chip ok" : "chip bad", href: "#/audit" }, h("i", { class: "dot" }),
+      chain.ok ? `${t("chain verified")} · ${chain.checked}` : `${t("broken at")} #${chain.first_broken_seq}`);
 
-  const maxCalls = Math.max(1, ...(stats?.tools || []).map((t) => t.calls));
+  // every row opens the tool in the console
+  const maxCalls = Math.max(1, ...(stats?.tools || []).map((row) => row.calls));
   const table = stats && stats.tools.length
     ? h("table", {},
       h("thead", {}, h("tr", {}, [t("Tool"), t("Calls"), "", t("Errors"), "p50", "p95"].map((c) => h("th", {}, c)))),
-      h("tbody", {}, stats.tools.map((t) => h("tr", {},
-        h("td", { class: "mono" }, t.tool),
-        h("td", { class: "mono" }, fmt.num(t.calls)),
-        h("td", {}, h("div", { class: "bar" }, h("i", { style: `width:${(t.calls / maxCalls) * 100}%` }))),
-        h("td", {}, t.errors ? h("span", { class: "chip bad" }, `${t.errors} · ${fmt.pct(t.error_rate)}`) : h("span", { class: "muted mono" }, "0")),
-        h("td", { class: "mono" }, `${t.p50_ms}ms`),
-        h("td", { class: "mono" }, `${t.p95_ms}ms`)))))
+      h("tbody", {}, stats.tools.map((row) => h("tr", { class: "clickable", title: t("open in the console"), onclick: () => { location.hash = `#/console/${row.tool}`; } },
+        h("td", { class: "mono" }, row.tool),
+        h("td", { class: "mono" }, fmt.num(row.calls)),
+        h("td", {}, h("div", { class: "bar" }, h("i", { style: `width:${(row.calls / maxCalls) * 100}%` }))),
+        h("td", {}, row.errors ? h("span", { class: "chip bad" }, `${row.errors} · ${fmt.pct(row.error_rate)}`) : h("span", { class: "muted mono" }, "0")),
+        h("td", { class: "mono" }, `${row.p50_ms}ms`),
+        h("td", { class: "mono" }, `${row.p95_ms}ms`)))))
     : h("div", { class: "empty" }, t("No calls yet. Open the console and run a tool."));
 
   const domains = {};
-  tools.forEach((t) => { (domains[t.domain] ||= []).push(t); });
+  tools.forEach((tool) => { (domains[tool.domain] ||= []).push(tool); });
 
-  return shell("Overview", t("last 24 hours"), chainChip,
+  return shell(t("Overview"), t("last 24 hours"), chainChip,
     h("div", { class: "grid kpis" },
-      kpi("Tools visible to you", tools.length, dynamic ? `${dynamic} dynamic` : t("native")),
+      kpi("Tools visible to you", tools.length, dynamic ? `${dynamic} ${t("dynamic")}` : t("native")),
       kpi("Calls", fmt.num(calls), "24h"),
       kpi("Error rate", calls ? fmt.pct(errors / calls) : "—"),
-      kpi("Role", state.me.role, state.me.admin_perms.length ? `${state.me.admin_perms.length} admin perms` : "")),
+      kpi("Role", state.me.role, state.me.admin_perms.length ? `${state.me.admin_perms.length} ${t("admin perms")}` : "")),
     h("div", { class: "grid wide" },
       h("section", { class: "card scroll" }, h("header", {}, h("span", { class: "label" }, t("Per tool"))), table),
       h("section", { class: "card" }, h("header", {}, h("span", { class: "label" }, t("Domains"))),
-        h("div", { class: "body stack" }, Object.entries(domains).map(([d, ts]) => h("div", { class: "row", style: "justify-content:space-between" },
+        h("div", { class: "body stack" }, Object.entries(domains).map(([d, ts]) => h("a", { class: "row domain-row", href: `#/console/${d}` },
           h("span", { class: "mono" }, d),
           h("span", { class: "row" }, h("span", { class: "muted mono" }, `${ts.length} ${t("tools")}`),
-            ts.some((t) => t.origin === t("dynamic")) ? h("span", { class: "chip violet" }, t("dynamic")) : null)))))));
+            ts.some((tool) => tool.origin === "dynamic") ? h("span", { class: "chip violet" }, t("dynamic")) : null)))))));
 }
 
 // ------------------------------------------------------------------ console
 
 async function consoleView() {
-  const filter = h("input", { class: "input", placeholder: t("filter tools…") });
+  // "#/console/<tool>" opens that tool; "#/console/<domain>" filters the list
+  const fromLink = state.param && state.tools.find((tool) => tool.name === state.param);
+  if (fromLink) state.selected = fromLink;
+  const filter = h("input", { class: "input", placeholder: t("filter tools…"), value: state.param && !fromLink ? state.param : "" });
   const list = h("div", { class: "toollist" });
   const detail = h("div", { class: "stack" });
 
@@ -420,47 +435,54 @@ async function consoleView() {
     list.replaceChildren();
     const q = filter.value.toLowerCase();
     const groups = {};
-    state.tools.filter((t) => !q || t.name.includes(q) || t.title.toLowerCase().includes(q))
-      .forEach((t) => (groups[t.domain] ||= []).push(t));
+    state.tools.filter((tool) => !q || tool.name.includes(q) || tool.domain.includes(q) || tool.title.toLowerCase().includes(q))
+      .forEach((tool) => (groups[tool.domain] ||= []).push(tool));
     for (const [d, ts] of Object.entries(groups)) {
       list.append(h("div", { class: "group label" }, d));
-      ts.forEach((t) => list.append(h("button", {
-        class: "tool-item" + (state.selected?.name === t.name ? " active" : ""),
-        onclick: () => { state.selected = t; drawList(); drawDetail(); },
-      }, h("div", { class: "n" }, t.name), h("div", { class: "t" }, t.title))));
+      ts.forEach((tool) => list.append(h("button", {
+        class: "tool-item" + (state.selected?.name === tool.name ? " active" : ""),
+        onclick: () => pick(tool),
+      }, h("div", { class: "n" }, tool.name), h("div", { class: "t" }, tool.title))));
     }
+    if (!Object.keys(groups).length) list.append(h("div", { class: "empty" }, t("no tool matches")));
+  };
+
+  const pick = (tool) => {
+    state.selected = tool;
+    history.replaceState(null, "", `#/console/${tool.name}`);
+    drawList(); drawDetail();
   };
 
   const drawDetail = () => {
-    const t = state.selected;
-    if (!t) { detail.replaceChildren(h("div", { class: "card empty" }, t("Pick a tool, or describe what you need above."))); return; }
+    const tool = state.selected;
+    if (!tool) { detail.replaceChildren(h("div", { class: "card empty" }, t("Pick a tool, or describe what you need above."))); return; }
     const args = h("textarea", { spellcheck: "false" });
-    args.value = JSON.stringify(skeleton(t.input_schema), null, 2);
+    args.value = JSON.stringify(skeleton(tool.input_schema), null, 2);
     const out = h("div", { class: "stack" });
     const run = async () => {
       let parsed;
-      try { parsed = JSON.parse(args.value || "{}"); } catch { toast("arguments are not valid JSON", true); return; }
-      const r = await api("/api/call", { method: "POST", body: { tool: t.name, arguments: parsed } });
+      try { parsed = JSON.parse(args.value || "{}"); } catch { toast(t("arguments are not valid JSON"), true); return; }
+      const r = await api("/api/call", { method: "POST", body: { tool: tool.name, arguments: parsed } });
       out.replaceChildren(
         h("div", { class: "meta-row" },
           h("span", { class: r.ok ? "chip ok" : "chip bad" }, h("i", { class: "dot" }), r.ok ? "ok" : r.error.error),
           h("span", { class: "chip" }, `${r.duration_ms} ms`),
-          h("span", { class: "hash" }, `correlation ${r.correlation}`)),
+          correlationLink(r.correlation)),
         jsonView(r.ok ? r.result : r.error));
     };
     detail.replaceChildren(
       h("section", { class: "card" },
         h("header", {},
-          h("div", {}, h("div", { class: "mono accent" }, t.name), h("div", {}, t.title)),
+          h("div", {}, h("div", { class: "mono accent" }, tool.name), h("div", {}, tool.title)),
           h("div", { class: "row" },
-            h("span", { class: t.origin === t("dynamic") ? "chip violet" : "chip" }, t.origin + (t.revision ? ` r${t.revision}` : "")),
-            h("span", { class: t.read_only ? "chip" : "chip warn" }, t.read_only ? t("read-only") : t("writes")))),
+            h("span", { class: tool.origin === "dynamic" ? "chip violet" : "chip" }, t(tool.origin) + (tool.revision ? ` r${tool.revision}` : "")),
+            h("span", { class: tool.read_only ? "chip" : "chip warn" }, tool.read_only ? t("read-only") : t("writes")))),
         h("div", { class: "body stack" },
-          h("p", { class: "muted", style: "margin:0" }, t.description),
+          h("p", { class: "muted", style: "margin:0" }, tool.description),
           h("div", { class: "grid two" },
             h("div", { class: "field" }, h("span", { class: "label" }, t("Arguments")), args,
               h("div", { class: "row" }, h("button", { class: "btn primary", onclick: () => run().catch((e) => toast(e.message, true)) }, t("Run ▸")))),
-            h("div", { class: "field" }, h("span", { class: "label" }, t("Input schema")), jsonView(t.input_schema))))),
+            h("div", { class: "field" }, h("span", { class: "label" }, t("Input schema")), jsonView(tool.input_schema))))),
       out);
   };
 
@@ -472,13 +494,13 @@ async function consoleView() {
     const hits = await api("/api/suggest", { method: "POST", body: { request: ask.value } });
     sugg.replaceChildren(...(hits.length ? hits.map((s) => h("button", {
       class: "suggestion", title: s.reasons.join(" · "),
-      onclick: () => { state.selected = state.tools.find((t) => t.name === s.tool); drawList(); drawDetail(); },
+      onclick: () => pick(state.tools.find((tool) => tool.name === s.tool)),
     }, s.tool, h("span", { class: "s" }, s.score.toFixed(2)))) : [h("span", { class: "muted mono" }, t("no confident match"))]));
   };
 
   filter.addEventListener("input", drawList);
   drawList(); drawDetail();
-  return shell("Console", t("call any tool you are allowed to"), null,
+  return shell(t("Console"), t("call any tool you are allowed to"), null,
     h("form", { class: "ask", onsubmit: suggest }, ask, h("button", { class: "btn", type: "submit" }, t("Suggest"))),
     sugg,
     h("div", { class: "grid split" },
@@ -505,7 +527,7 @@ async function registryView() {
   const propose = async () => {
     try {
       await api("/api/registry/propose", { method: "POST", body: { definition: JSON.parse(editor.value) } });
-      toast("draft created — another reviewer must approve it"); render();
+      toast(t("draft created — another reviewer must approve it")); render();
     } catch (e) { toast(e.data?.message || e.message, true); }
   };
   const review = async (r, approve) => {
@@ -513,7 +535,7 @@ async function registryView() {
     catch (e) { toast(e.message, true); }
   };
   const chip = { draft: "chip warn", approved: "chip ok", disabled: "chip bad", superseded: "chip" };
-  return shell("Registry", t("dynamic tools · four-eyes review"), null,
+  return shell(t("Registry"), t("dynamic tools · four-eyes review"), null,
     h("div", { class: "grid wide" },
       h("section", { class: "card scroll" }, h("header", {}, h("span", { class: "label" }, t("Revisions")), h("span", { class: "muted mono" }, `${revs.length}`)),
         revs.length ? h("table", {}, h("thead", {}, h("tr", {}, [t("Tool"), t("Rev"), t("Status"), t("Author"), ""].map((c) => h("th", {}, c)))),
@@ -531,13 +553,16 @@ async function registryView() {
         h("div", { class: "body stack" },
           h("p", { class: "muted", style: "margin:0" }, t("Credentials go in Secrets and are referenced as {{secret:name}}. Literal keys, http:// and private addresses are rejected.")),
           editor,
-          h("div", { class: "row" }, h("button", { class: "btn primary", onclick: propose, disabled: !can("registry.write") }, t("Submit draft")))))));
+          can("registry.write") ? h("div", { class: "row" }, h("button", { class: "btn primary", onclick: propose }, t("Submit draft")))
+            : h("span", { class: "chip" }, t("proposing needs the registry.write permission"))))));
 }
 
 // ------------------------------------------------------------------ audit
 
 async function auditView() {
-  const [events, chain] = await Promise.all([api("/api/audit?limit=300"), api("/api/audit/verify")]);
+  const corr = state.param;
+  const [events, chain] = await Promise.all([
+    api(corr ? `/api/audit?correlation=${encodeURIComponent(corr)}` : "/api/audit?limit=300"), api("/api/audit/verify")]);
   const drawer = h("aside", { class: "drawer" });
   const open = (e) => {
     drawer.replaceChildren(
@@ -551,10 +576,13 @@ async function auditView() {
         h("div", { class: "field" }, h("span", { class: "label" }, "hash"), h("span", { class: "hash" }, e.hash))));
     drawer.classList.add("open");
   };
-  return shell("Audit trail", t("sha-256 hash chain · PII masked"), chain.ok
+  return shell(t("Audit trail"), t("sha-256 hash chain · PII masked"), chain.ok
     ? h("span", { class: "chip ok" }, h("i", { class: "dot" }), `${t("verified")} ${chain.checked} ${t("events")}`)
-    : h("span", { class: "chip bad" }, h("i", { class: "dot" }), `tampered at #${chain.first_broken_seq}`),
+    : h("span", { class: "chip bad" }, h("i", { class: "dot" }), `${t("tampered at")} #${chain.first_broken_seq}`),
+    corr ? h("div", { class: "row" }, h("span", { class: "label" }, t("request")), h("span", { class: "chip violet" }, corr),
+      h("a", { class: "btn ghost", href: "#/audit" }, t("show all"))) : null,
     h("section", { class: "card" },
+      events.length ? null : h("div", { class: "empty" }, t("No events.")),
       h("table", {}, h("thead", {}, h("tr", {}, ["#", t("When"), t("Kind"), t("Actor"), t("Tool"), t("Outcome"), "ms", t("Hash")].map((c) => h("th", {}, c)))),
         h("tbody", {}, events.map((e) => h("tr", { class: "clickable", onclick: () => open(e) },
           h("td", { class: "mono muted" }, e.seq),
@@ -586,7 +614,7 @@ async function accessView() {
     try { await api(`/api/access/principals/${p.id}/status`, { method: "POST", body: { status: p.status === "active" ? "blocked" : "active" } }); render(); }
     catch (e) { toast(e.message, true); }
   };
-  return shell("Access", t("principals · roles · tool globs"), null,
+  return shell(t("Access"), t("principals · roles · tool globs"), null,
     h("div", { class: "grid two" },
       h("section", { class: "card" }, h("header", {}, h("span", { class: "label" }, t("Principals"))),
         h("table", {}, h("thead", {}, h("tr", {}, [t("Id"), t("Kind"), t("Role"), t("Status"), ""].map((c) => h("th", {}, c)))),
@@ -610,22 +638,22 @@ async function secretsView() {
   const data = await api("/api/secrets");
   const name = h("input", { class: "input", placeholder: t("name (lowercase_underscores)") });
   const value = h("input", { class: "input", type: "password", placeholder: t("value — never shown again"), autocomplete: "off" });
-  const shared = h("input", { type: "checkbox", disabled: !can("secrets.write") });
+  const shared = h("input", { type: "checkbox" });
   const save = async () => {
-    try { await api("/api/secrets", { method: "PUT", body: { name: name.value, value: value.value, shared: shared.checked } }); toast("stored, encrypted"); render(); }
+    try { await api("/api/secrets", { method: "PUT", body: { name: name.value, value: value.value, shared: shared.checked } }); toast(t("stored, encrypted")); render(); }
     catch (e) { toast(e.data?.detail?.[0]?.msg || e.message, true); }
   };
   const del = async (n, isShared) => { await api(`/api/secrets/${n}?shared=${isShared}`, { method: "DELETE" }); render(); };
   const list = (names, isShared) => names.length ? names.map((n) => h("div", { class: "row", style: "justify-content:space-between" },
     h("span", { class: "mono" }, `{{secret:${n}}}`), h("button", { class: "btn ghost", onclick: () => del(n, isShared) }, t("delete"))))
     : [h("span", { class: "muted" }, t("none"))];
-  return shell("Secrets", t("fernet-encrypted · names only"), null,
+  return shell(t("Secrets"), t("fernet-encrypted · names only"), null,
     h("div", { class: "grid two" },
       h("section", { class: "card" }, h("header", {}, h("span", { class: "label" }, t("Yours"))), h("div", { class: "body stack" }, list(data.mine, false)),
         h("header", {}, h("span", { class: "label" }, t("Shared (__system__)"))), h("div", { class: "body stack" }, list(data.shared, true))),
       h("section", { class: "card" }, h("header", {}, h("span", { class: "label" }, t("Store a secret"))),
         h("div", { class: "body stack" }, name, value,
-          h("label", { class: "row muted" }, shared, t("shared with everyone (needs secrets.write)")),
+          can("secrets.write") ? h("label", { class: "row muted" }, shared, t("shared with everyone")) : null,
           h("div", { class: "row" }, h("button", { class: "btn primary", onclick: save }, t("Encrypt & store")))))));
 }
 
@@ -643,7 +671,7 @@ async function render() {
   if (!VIEWS[state.route]) state.route = "chat";
   try {
     state.tools = await api("/api/tools");
-    if (state.selected) state.selected = state.tools.find((t) => t.name === state.selected.name) || null;
+    if (state.selected) state.selected = state.tools.find((tool) => tool.name === state.selected.name) || null;
     root.replaceChildren(await VIEWS[state.route]());
   } catch (e) {
     if (e.status === 401) { state.me = null; root.replaceChildren(loginView()); return; }

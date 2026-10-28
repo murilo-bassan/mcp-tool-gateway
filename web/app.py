@@ -234,10 +234,12 @@ def registry_review(body: ReviewBody, principal: access.Principal = Depends(muta
 # ---------------------------------------------------------------- audit
 
 @app.get("/api/audit")
-def audit_list(kind: str | None = None, actor: str | None = None, tool: str | None = None, limit: int = 200,
-               principal: access.Principal = Depends(current)) -> list[dict[str, Any]]:
+def audit_list(kind: str | None = None, actor: str | None = None, tool: str | None = None, correlation: str | None = None,
+               limit: int = 200, principal: access.Principal = Depends(current)) -> list[dict[str, Any]]:
     if not principal.can("audit.read"):  # without it, you see only your own calls
         actor = principal.id
+    if correlation:  # every event of one request, oldest first
+        return [e.model_dump() for e in audit.correlated(correlation) if actor is None or e.actor == actor]
     return [e.model_dump() for e in audit.search(kind, actor, tool, min(limit, 1000))]  # type: ignore[arg-type]
 
 

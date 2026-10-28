@@ -310,3 +310,10 @@ details pre.json { max-height: 260px; }
 .conv:hover .conv-actions, .conv.active .conv-actions { opacity: 1; }
 .conv-actions .btn { height: 26px; padding: 0 8px; }
 @media (max-width: 980px) { .chat-layout { grid-template-columns: 1fr; } .conv-list { height: auto; max-height: 260px; } }
+
+/* ---------------------------------------------------------------- links that look like data */
+a.hash.link { text-decoration: none; }
+a.hash.link:hover { color: var(--accent); }
+a.chip { text-decoration: none; }
+.domain-row { justify-content: space-between; text-decoration: none; color: inherit; padding: 4px 6px; margin: 0 -6px; border-radius: 4px; }
+.domain-row:hover { background: var(--surface-2); }
