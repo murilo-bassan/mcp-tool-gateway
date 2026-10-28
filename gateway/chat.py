@@ -150,7 +150,10 @@ def explain(tool: str, result: Any, lang: Lang) -> str:
 class DeterministicChat:
     engine = "deterministic"
 
-    def reply(self, principal: Principal, message: str, lang: Lang = "pt", pending: dict[str, Any] | None = None) -> Reply:
+    def reply(self, principal: Principal, message: str, lang: Lang = "pt", pending: dict[str, Any] | None = None,
+              context: dict[str, Any] | None = None) -> Reply:
+        """`context`: the previous successful call in this conversation ({"tool", "arguments"}), for follow-ups
+        like "e em GO?" that only change a parameter."""
         correlation = uuid.uuid4().hex[:16]
         visible = [t for t in catalog.visible_to(principal.role.allows_tool) if not t.name.startswith(("meta.", "registry."))]
         trace: list[dict[str, Any]] = []
@@ -162,6 +165,12 @@ class DeterministicChat:
         else:
             hits = intents.suggest(message, visible, top_k=3, min_score=1.0)
             trace.append({"step": "route", "candidates": [{"tool": h.tool, "score": h.score, "reasons": list(h.reasons)} for h in hits]})
+            if not hits and context and context.get("tool") in {v.name for v in visible}:
+                # "e em GO?" — same question as before, one argument changed
+                changed = {k: v for k, v in extract(context["tool"], message).items() if k != "limit"}
+                if changed:
+                    hits = [intents.Suggestion(tool=context["tool"], score=1.0, reasons=("follow-up of previous question",))]
+                    trace.append({"step": "context", "tool": context["tool"], "changed": changed})
             if not hits and (_NF.search(message) or _AG.search(message)):
                 # an explicit id is enough to know what the user wants to look at
                 hits = [intents.Suggestion(tool="invoices.get" if _NF.search(message) else "grants.get_agreement",

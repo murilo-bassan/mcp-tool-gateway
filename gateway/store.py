@@ -75,6 +75,27 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_kind_ts ON events(kind, ts);
 CREATE INDEX IF NOT EXISTS events_correlation ON events(correlation);
+
+-- Chat history. Owner-scoped: a principal only ever reads its own conversations.
+CREATE TABLE IF NOT EXISTS conversations (
+    id          TEXT PRIMARY KEY,
+    owner       TEXT NOT NULL REFERENCES principals(id),
+    title       TEXT NOT NULL,
+    lang        TEXT NOT NULL DEFAULT 'pt',
+    pending     TEXT,             -- JSON: the follow-up question still waiting for an answer
+    created_at  REAL NOT NULL,
+    updated_at  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS conversations_owner ON conversations(owner, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS messages (
+    seq              INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id  TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role             TEXT NOT NULL CHECK (role IN ('user', 'bot')),
+    content          TEXT NOT NULL,   -- JSON: {"text", ...reply fields for the bot}
+    created_at       REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS messages_conversation ON messages(conversation_id, seq);
 """
 
 _lock = threading.RLock()

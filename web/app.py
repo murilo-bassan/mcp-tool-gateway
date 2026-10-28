@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from gateway import access, audit, catalog, chat, executor, intents, registry, secrets_store
+from gateway import access, audit, catalog, chat, conversations, executor, intents, registry, secrets_store
 from gateway.config import get_settings
 from gateway.errors import AuthFailed, GatewayError, InvalidArguments, InvalidDefinition, NotFound, PermissionDenied, \
     RateLimited
@@ -149,14 +149,48 @@ def suggest(body: SuggestBody, principal: access.Principal = Depends(mutating)) 
 class ChatBody(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     lang: str = Field(default="pt", pattern="^(pt|en)$")
-    pending: dict[str, Any] | None = None
+    conversation_id: str | None = None   # omitted → a new conversation is created and returned
 
 
 @app.post("/api/chat")
 def chat_endpoint(body: ChatBody, principal: access.Principal = Depends(mutating)) -> dict[str, Any]:
+    conv = (conversations.get(principal.id, body.conversation_id) if body.conversation_id
+            else conversations.create(principal.id, body.message, body.lang))
     engine = chat.engine()
-    reply = engine.reply(principal, body.message, body.lang, body.pending)  # type: ignore[arg-type]
-    return {"engine": engine.engine, **reply.__dict__}
+    # the pending follow-up lives on the stored conversation, not in the browser
+    if isinstance(engine, chat.DeterministicChat):
+        reply = engine.reply(principal, body.message, body.lang, conv["pending"],  # type: ignore[arg-type]
+                             conversations.last_call(principal.id, conv["id"]))
+    else:
+        reply = engine.reply(principal, body.message, body.lang, conv["pending"])  # type: ignore[arg-type]
+    out = {"engine": engine.engine, **reply.__dict__}
+    conversations.append(principal.id, conv["id"], body.message, out)
+    return {**out, "conversation_id": conv["id"]}
+
+
+@app.get("/api/conversations")
+def conversations_list(principal: access.Principal = Depends(current)) -> list[dict[str, Any]]:
+    return conversations.list_for(principal.id)
+
+
+@app.get("/api/conversations/{conv_id}")
+def conversation_get(conv_id: str, principal: access.Principal = Depends(current)) -> dict[str, Any]:
+    return {**conversations.get(principal.id, conv_id), "messages": conversations.messages(principal.id, conv_id)}
+
+
+class RenameBody(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
+@app.patch("/api/conversations/{conv_id}")
+def conversation_rename(conv_id: str, body: RenameBody, principal: access.Principal = Depends(mutating)) -> dict[str, Any]:
+    return conversations.rename(principal.id, conv_id, body.title)
+
+
+@app.delete("/api/conversations/{conv_id}")
+def conversation_delete(conv_id: str, principal: access.Principal = Depends(mutating)) -> dict[str, Any]:
+    conversations.delete(principal.id, conv_id)
+    return {"deleted": conv_id}
 
 
 @app.post("/v1/call")

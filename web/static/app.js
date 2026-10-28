@@ -2,12 +2,15 @@
 // Every DOM node is created with h(); server data never goes through innerHTML.
 
 const root = document.getElementById("root");
-const state = { me: null, tools: [], selected: null, route: "chat", chat: [], chatPending: null, chatBusy: false };
+const state = { me: null, tools: [], selected: null, route: "chat", param: null, chat: [], chatId: null, convs: [], chatBusy: false };
 
 
 // ------------------------------------------------------------------ i18n (EN source strings are the keys)
 
 const PT = {
+ "Conversations": "Conversas", "+ new": "+ nova", "messages": "mensagens", "message": "mensagem", "waiting": "aguardando",
+ "Rename": "Renomear", "Delete": "Excluir", "New title": "Novo título", "Delete this conversation?": "Excluir esta conversa?",
+ "No conversations yet.": "Nenhuma conversa ainda.",
  "Workspace": "Espaço de trabalho",
  "exit": "sair",
  "Log out": "Sair",
@@ -264,13 +267,17 @@ async function sendChat(text) {
   state.chatBusy = true;
   render();
   try {
-    const r = await api("/api/chat", { method: "POST", body: { message: text, lang, pending: state.chatPending } });
-    state.chatPending = r.pending;
+    const r = await api("/api/chat", { method: "POST", body: { message: text, lang, conversation_id: state.chatId } });
     state.chat.push({ role: "bot", ...r });
+    if (state.chatId !== r.conversation_id) {
+      state.chatId = r.conversation_id;
+      history.replaceState(null, "", `#/chat/${r.conversation_id}`);
+    }
   } catch (e) {
     state.chat.push({ role: "bot", text: e.message, error: { error: "request_failed" } });
   }
   state.chatBusy = false;
+  try { state.convs = await api("/api/conversations"); } catch {}
   render();
 }
 
@@ -291,7 +298,51 @@ function bubble(m) {
     h("div", { class: "bubble" }, h("div", {}, m.text), m.tool || m.correlation ? meta : null, details));
 }
 
+async function openConversation(id) {
+  if (!id) { state.chat = []; state.chatId = null; return; }
+  if (state.chatId === id && state.chat.length) return;
+  try {
+    const c = await api(`/api/conversations/${id}`);
+    state.chat = c.messages;
+    state.chatId = id;
+  } catch { state.chat = []; state.chatId = null; history.replaceState(null, "", "#/chat"); }
+}
+
+function when(ts) {
+  const d = new Date(ts * 1000), now = new Date();
+  return d.toDateString() === now.toDateString()
+    ? d.toLocaleTimeString(lang === "pt" ? "pt-BR" : "en", { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString(lang === "pt" ? "pt-BR" : "en", { day: "2-digit", month: "short" });
+}
+
+function historyPanel() {
+  const rename = async (c) => {
+    const title = prompt(t("New title"), c.title);
+    if (title) { await api(`/api/conversations/${c.id}`, { method: "PATCH", body: { title } }); render(); }
+  };
+  const remove = async (c) => {
+    if (!confirm(t("Delete this conversation?"))) return;
+    await api(`/api/conversations/${c.id}`, { method: "DELETE" });
+    if (state.chatId === c.id) { state.chat = []; state.chatId = null; location.hash = "#/chat"; }
+    render();
+  };
+  return h("section", { class: "card conv-list" },
+    h("header", {}, h("span", { class: "label" }, t("Conversations")),
+      h("a", { class: "btn primary", href: "#/chat", onclick: () => { state.chat = []; state.chatId = null; setTimeout(render, 0); } }, t("+ new"))),
+    state.convs.length ? h("div", {}, state.convs.map((c) => h("div", { class: "conv" + (c.id === state.chatId ? " active" : "") },
+      h("a", { href: `#/chat/${c.id}`, class: "conv-main" },
+        h("div", { class: "conv-title" }, c.title),
+        h("div", { class: "hash" }, `${when(c.updated_at)} · ${c.messages} ${t(c.messages === 1 ? "message" : "messages")}`,
+          c.pending ? h("span", { class: "chip warn", style: "margin-left:6px" }, t("waiting")) : null)),
+      h("div", { class: "conv-actions" },
+        h("button", { class: "btn ghost", title: t("Rename"), onclick: () => rename(c) }, "✎"),
+        h("button", { class: "btn ghost", title: t("Delete"), onclick: () => remove(c) }, "×")))))
+      : h("div", { class: "empty" }, t("No conversations yet.")));
+}
+
 async function chatView() {
+  await openConversation(state.param);
+  state.convs = await api("/api/conversations");
   const input = h("textarea", { class: "input chat-input", rows: 2, placeholder: t("Ask about invoices, tax ids or agreements…") });
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(input.value); } });
   const log = h("div", { class: "chat-log" },
@@ -301,12 +352,13 @@ async function chatView() {
     state.chatBusy ? h("div", { class: "msg bot" }, avatar(), h("div", { class: "bubble typing" }, h("i"), h("i"), h("i"))) : null);
   setTimeout(() => { log.scrollTop = log.scrollHeight; input.focus(); }, 0);
   return shell(t("Chat"), t("ask in plain language · every call governed and audited"),
-    h("button", { class: "btn ghost", onclick: () => { state.chat = []; state.chatPending = null; render(); } }, t("new conversation")),
+    h("a", { class: "btn ghost", href: "#/chat", onclick: () => { state.chat = []; state.chatId = null; setTimeout(render, 0); } }, t("new conversation")),
+    h("div", { class: "chat-layout" }, historyPanel(),
     h("section", { class: "card chat" },
       log,
       h("div", { class: "chat-examples" }, EXAMPLES[lang].map((ex) => h("button", { class: "suggestion", onclick: () => sendChat(ex) }, ex))),
       h("form", { class: "chat-form", onsubmit: (e) => { e.preventDefault(); sendChat(input.value); } },
-        input, h("button", { class: "btn primary", type: "submit", disabled: state.chatBusy }, t("Send ▸")))));
+        input, h("button", { class: "btn primary", type: "submit", disabled: state.chatBusy }, t("Send ▸"))))));
 }
 
 // ------------------------------------------------------------------ overview
@@ -585,7 +637,9 @@ async function render() {
   if (!state.me) {
     try { state.me = await api("/api/me"); } catch { root.replaceChildren(loginView()); return; }
   }
-  state.route = (location.hash.replace("#/", "") || "chat").split("?")[0];
+  const [route, param] = (location.hash.replace("#/", "") || "chat").split("?")[0].split("/");
+  state.route = route;
+  state.param = param || null;
   if (!VIEWS[state.route]) state.route = "chat";
   try {
     state.tools = await api("/api/tools");

@@ -296,3 +296,17 @@ details pre.json { max-height: 260px; }
 .chat-form { display: flex; gap: 10px; padding: 14px 22px; border-top: 1px solid var(--line); align-items: flex-end; }
 .chat-input { min-height: 46px; max-height: 160px; font: 14.5px/1.5 var(--sans); resize: none; }
 .chat-form .btn { height: 46px; white-space: nowrap; }
+
+/* ---------------------------------------------------------------- chat history */
+.chat-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; align-items: start; }
+.conv-list { height: calc(100vh - 170px); min-height: 480px; overflow-y: auto; }
+.conv-list header .btn { height: 28px; padding: 0 10px; }
+.conv { display: flex; align-items: center; border-bottom: 1px solid var(--line); border-left: 2px solid transparent; }
+.conv:hover { background: var(--surface-2); }
+.conv.active { background: var(--surface-2); border-left-color: var(--accent); }
+.conv-main { flex: 1; min-width: 0; padding: 11px 14px; text-decoration: none; color: inherit; }
+.conv-title { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-actions { display: flex; opacity: 0; transition: opacity .15s; padding-right: 6px; }
+.conv:hover .conv-actions, .conv.active .conv-actions { opacity: 1; }
+.conv-actions .btn { height: 26px; padding: 0 8px; }
+@media (max-width: 980px) { .chat-layout { grid-template-columns: 1fr; } .conv-list { height: auto; max-height: 260px; } }
