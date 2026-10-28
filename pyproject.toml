@@ -1,0 +1,27 @@
+[project]
+name = "mcp-tool-gateway"
+version = "0.1.0"
+description = "A single, governed MCP server: tool catalog, per-tool RBAC, encrypted secrets and a tamper-evident audit trail."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Murilo Bassan" }]
+dependencies = [
+  "mcp==2.2.0",
+  "httpx==0.28.1",
+  "pydantic==2.13.1",
+  "jsonschema==4.26.0",
+  "cryptography==50.0.2",
+  "fastapi==0.138.2",
+  "uvicorn==0.46.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools]
+packages = ["gateway", "gateway.domains", "web"]
