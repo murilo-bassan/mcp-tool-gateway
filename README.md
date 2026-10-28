@@ -7,10 +7,10 @@ Per-tool RBAC · encrypted secrets · four-eyes dynamic tools · tamper-evident 
 
 ![python](https://img.shields.io/badge/python-3.11%2B-000?style=flat-square&labelColor=000&color=c6ff00)
 ![mcp](https://img.shields.io/badge/MCP-2.2-000?style=flat-square&labelColor=000&color=a58bff)
-![tests](https://img.shields.io/badge/tests-101%20passing-000?style=flat-square&labelColor=000&color=c6ff00)
+![tests](https://img.shields.io/badge/tests-102%20passing-000?style=flat-square&labelColor=000&color=c6ff00)
 ![license](https://img.shields.io/badge/license-MIT-000?style=flat-square&labelColor=000&color=2a2a2a)
 
-[English](#english) · [Português](#português)
+**English** · [Português](README.pt-BR.md)
 
 <img src="docs/screenshots/chat-history.png" alt="Chat with stored conversations" width="100%">
 
@@ -18,9 +18,7 @@ Per-tool RBAC · encrypted secrets · four-eyes dynamic tools · tamper-evident 
 
 ---
 
-## English
-
-### Why this exists
+## Why this exists
 
 Giving an LLM tools is easy. Giving it tools **safely, across teams, with an
 answer to "who called what, with which data, and was it allowed?"** is the
@@ -31,7 +29,7 @@ or from another backend — passes through the same door.
 > All data is synthetic and generated from fixed seeds. No API keys are needed
 > to run anything here, and none are in the repository.
 
-### What it demonstrates
+## What it demonstrates
 
 | Capability | How |
 |---|---|
@@ -40,14 +38,14 @@ or from another backend — passes through the same door.
 | **Per-tool RBAC** | Roles are data: fnmatch globs over tool names + a closed set of admin permissions. Clients only *see* tools they can call ([ADR 0003](docs/adr/0003-roles-as-data.md)). |
 | **Governed dynamic tools** | HTTP endpoints registered as JSON, validated (schema, https, no private IPs, no literal credentials), approved by a *different* person ([ADR 0004](docs/adr/0004-dynamic-tools-with-four-eyes.md)). |
 | **Secrets done right** | Fernet at rest, `{{secret:name}}` references, resolved per caller at call time, never shown back. |
-| **Tamper-evident audit** | SHA-256 hash chain over masked events; the panel verifies it live ([ADR 0005](docs/adr/0005-hash-chained-audit.md)). |
+| **Tamper-evident audit** | SHA-256 hash chain over masked events; the panel verifies it live ([ADR 0005](docs/adr/0005-hash-chained-audit.md)). Every correlation id opens the whole request in the trail. |
 | **PII masking** | CPF/CNPJ/e-mail/phone/card/tokens masked *before* storage, keeping enough suffix for support. |
 | **Chat over governed tools** | `/api/chat` routes a PT/EN message to a tool, extracts arguments, asks follow-ups for what is missing, keeps context (“and in GO?”), executes through the same executor (RBAC + audit) and explains the result. Offline by default; `GATEWAY_LLM_API_KEY` switches to OpenAI-compatible tool calling over the same tools. |
 | **Stored conversations** | Every chat is saved per user (SQLite), with its tool calls, results and correlation ids; reopen, rename or delete from the sidebar, and answer a pending follow-up days later. Owner-scoped: another user's conversation id answers 404. |
 | **Deterministic intent baseline** | `meta.suggest_tool` ranks tools for a PT/EN request with reasons — the floor LLM routers are benchmarked against in [`llm-routing-eval-lab`](https://github.com/murilo-bassan/llm-routing-eval-lab) ([ADR 0006](docs/adr/0006-deterministic-intent-baseline.md)). |
 | **Production hygiene** | CSRF guard, strict CSP, scrypt, rate limiting, non-root Docker image with healthcheck, CI matrix + container smoke test. |
 
-### Architecture
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -71,17 +69,19 @@ flowchart LR
   E --> AU[(hash-chained audit<br/>masked payloads)]
 ```
 
-### Quick start
+## Quick start
 
 ```bash
 git clone https://github.com/murilo-bassan/mcp-tool-gateway.git
 cd mcp-tool-gateway
 pip install -r requirements-dev.txt
 
-python -m pytest                      # 101 tests, ~20 s, includes a real stdio MCP round-trip
+python -m pytest                      # 102 tests, ~20 s, includes a real stdio MCP round-trip
 python scripts/demo_traffic.py        # optional: fill the panel with activity
 python -m uvicorn web.app:app --port 8600   # panel → http://localhost:8600 (admin/admin)
 ```
+
+Demo users: `admin/admin`, `analyst/analyst`, `auditor/auditor`. The UI switches between EN and PT-BR.
 
 Talk MCP to it from the terminal, through the real protocol:
 
@@ -94,7 +94,7 @@ python scripts/mcp_call.py suggest "which agreements are overdue in MS?"
 Or plug it into Claude Desktop with [`docs/claude_desktop_config.example.json`](docs/claude_desktop_config.example.json).
 Docker: `docker compose up --build`.
 
-### Tool domains (synthetic)
+## Tool domains (synthetic)
 
 | Domain | Tools | Notes |
 |---|---|---|
@@ -103,7 +103,7 @@ Docker: `docker compose up --build`.
 | `meta.*` | `whoami`, `list_tools`, `suggest_tool` | Discovery, filtered by role. |
 | `registry.*` | `list`, `propose`, `review` | The governance flow, available over MCP too. |
 
-### Screens
+## Screens
 
 | Console | Audit trail |
 |---|---|
@@ -111,7 +111,7 @@ Docker: `docker compose up --build`.
 | **Registry** | **Access** |
 | <img src="docs/screenshots/registry.png" alt="Registry"> | <img src="docs/screenshots/access.png" alt="Access"> |
 
-### Layout
+## Layout
 
 ```
 gateway/
@@ -125,6 +125,8 @@ gateway/
   audit.py         hash chain, search, stats
   masking.py       PII/credential masking
   intents.py       deterministic tool suggestion
+  chat.py          deterministic (and optional LLM) chat over the executor
+  conversations.py owner-scoped stored conversations
   ratelimit.py     sliding window
   domains/         invoices, grants, meta, governance, synthetic data
 server.py          stdio MCP server
@@ -134,46 +136,6 @@ docs/              ADRs, security model, screenshots
 ```
 
 See [`docs/security.md`](docs/security.md) for the threat model and what is deliberately out of scope.
-
----
-
-## Português
-
-### Por que existe
-
-Dar tools a um LLM é fácil. Difícil é dar **com segurança, entre equipes, e
-conseguir responder "quem chamou o quê, com quais dados, e era permitido?"**.
-Este repositório é essa camada: um único servidor MCP ao qual todo cliente se
-conecta, onde toda chamada — do Claude Desktop, do painel web ou de outro
-backend — passa pela mesma porta.
-
-> Todos os dados são sintéticos, gerados com sementes fixas. Nada aqui precisa
-> de chave de API, e nenhuma chave está no repositório.
-
-### O que demonstra
-
-- **Servidor MCP com tools vindas de dados**: os JSON Schemas saem do catálogo a cada `tools/list`; uma tool aprovada no painel aparece no cliente sem reiniciar nada.
-- **Um executor para todas as portas**: resolver → autorizar → limitar taxa → validar → executar → auditar, igual para MCP, painel e API de serviço.
-- **Permissão por tool**: papéis são dados (globs sobre nomes de tools + permissões administrativas fechadas). O cliente só *vê* o que pode chamar.
-- **Tools dinâmicas governadas**: endpoints HTTP cadastrados como JSON, validados (schema, https, sem IP privado, sem credencial literal) e aprovados por **outra** pessoa.
-- **Secrets**: criptografados com Fernet, referenciados como `{{secret:nome}}`, resolvidos por quem chama, nunca exibidos de volta.
-- **Auditoria à prova de adulteração**: cadeia de hashes SHA-256 sobre eventos já mascarados; o painel verifica ao vivo.
-- **Mascaramento de dados pessoais**: CPF, CNPJ, e-mail, telefone, cartão e tokens mascarados antes de gravar.
-- **Chat sobre as tools governadas**: pergunta em PT ou EN, escolhe a tool, extrai os argumentos, pergunta o que falta e executa pelo mesmo executor (permissão + auditoria). Interface com opção PT-BR/EN.
-- **Conversas armazenadas**: cada conversa fica salva por usuário, com as chamadas, resultados e ids de correlação; dá para voltar, renomear ou excluir, e responder uma pergunta pendente depois. Só o dono enxerga.
-- **Baseline determinístico de intenção**: `meta.suggest_tool` sugere a tool com as razões — é o piso contra o qual os roteadores com LLM são comparados no [`llm-routing-eval-lab`](https://github.com/murilo-bassan/llm-routing-eval-lab).
-
-### Como rodar
-
-```bash
-pip install -r requirements-dev.txt
-python -m pytest                              # 101 testes, inclui ida e volta MCP real via stdio
-python scripts/demo_traffic.py                # opcional: gera atividade para o painel
-python -m uvicorn web.app:app --port 8600     # painel em http://localhost:8600 (admin/admin)
-python scripts/mcp_call.py suggest "quais convênios estão atrasados em MS?"
-```
-
-Decisões de arquitetura em [`docs/adr/`](docs/adr) e modelo de ameaças em [`docs/security.md`](docs/security.md).
 
 ---
 
