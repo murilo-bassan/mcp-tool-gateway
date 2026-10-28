@@ -26,8 +26,8 @@ actual job. This repository is that layer: a single MCP server that every
 client connects to, where every call — from Claude Desktop, from the web panel
 or from another backend — passes through the same door.
 
-> All data is synthetic and generated from fixed seeds. No API keys are needed
-> to run anything here, and none are in the repository.
+> All data is synthetic and generated from fixed seeds. Credentials only ever come
+> from the environment or the encrypted secret store, never from the repository.
 
 ## What it demonstrates
 
@@ -40,7 +40,7 @@ or from another backend — passes through the same door.
 | **Secrets done right** | Fernet at rest, `{{secret:name}}` references, resolved per caller at call time, never shown back. |
 | **Tamper-evident audit** | SHA-256 hash chain over masked events; the panel verifies it live ([ADR 0005](docs/adr/0005-hash-chained-audit.md)). Every correlation id opens the whole request in the trail. |
 | **PII masking** | CPF/CNPJ/e-mail/phone/card/tokens masked *before* storage, keeping enough suffix for support. |
-| **Chat over governed tools** | `/api/chat` routes a PT/EN message to a tool, extracts arguments, asks follow-ups for what is missing, keeps context (“and in GO?”), executes through the same executor (RBAC + audit) and explains the result. Offline by default; `GATEWAY_LLM_API_KEY` switches to OpenAI-compatible tool calling over the same tools. |
+| **Chat over governed tools** | `/api/chat` routes a PT/EN message to a tool, extracts arguments, asks follow-ups for what is missing, keeps context (“and in GO?”), executes through the same executor (RBAC + audit) and explains the result. Two engines behind one interface: OpenAI-compatible tool calling (`GATEWAY_LLM_API_KEY`) and a deterministic intent engine that keeps the tests exact. |
 | **Stored conversations** | Every chat is saved per user (SQLite), with its tool calls, results and correlation ids; reopen, rename or delete from the sidebar, and answer a pending follow-up days later. Owner-scoped: another user's conversation id answers 404. |
 | **Deterministic intent baseline** | `meta.suggest_tool` ranks tools for a PT/EN request with reasons — the floor LLM routers are benchmarked against in [`llm-routing-eval-lab`](https://github.com/murilo-bassan/llm-routing-eval-lab) ([ADR 0006](docs/adr/0006-deterministic-intent-baseline.md)). |
 | **Production hygiene** | CSRF guard, strict CSP, scrypt, rate limiting, non-root Docker image with healthcheck, CI matrix + container smoke test. |

@@ -26,8 +26,8 @@ permitido?"**. Este repositório é essa camada: um único servidor MCP ao qual
 todo cliente se conecta, onde toda chamada (do Claude Desktop, do painel web ou
 de outro backend) passa pela mesma porta.
 
-> Todos os dados são sintéticos, gerados com sementes fixas. Nada aqui precisa
-> de chave de API para rodar, e nenhuma chave está no repositório.
+> Todos os dados são sintéticos, gerados com sementes fixas. Credenciais só vêm do
+> ambiente ou do cofre de secrets criptografado, nunca do repositório.
 
 ## O que demonstra
 
@@ -40,7 +40,7 @@ de outro backend) passa pela mesma porta.
 | **Secrets do jeito certo** | Fernet em repouso, referências `{{secret:nome}}` resolvidas por quem chama no momento da chamada, nunca exibidas de volta. |
 | **Auditoria à prova de adulteração** | Cadeia de hashes SHA-256 sobre eventos já mascarados; o painel verifica ao vivo ([ADR 0005](docs/adr/0005-hash-chained-audit.md)). Cada id de correlação abre a requisição inteira na trilha. |
 | **Mascaramento de dados pessoais** | CPF, CNPJ, e-mail, telefone, cartão e tokens mascarados *antes* de gravar, mantendo o final suficiente para o suporte. |
-| **Chat sobre as tools governadas** | `/api/chat` leva uma mensagem em PT ou EN até a tool certa, extrai os argumentos, pergunta o que falta, mantém o contexto (“e em GO?”), executa pelo mesmo executor (permissão + auditoria) e explica o resultado. Funciona offline por padrão; com `GATEWAY_LLM_API_KEY` passa a usar tool calling compatível com OpenAI sobre as mesmas tools. |
+| **Chat sobre as tools governadas** | `/api/chat` leva uma mensagem em PT ou EN até a tool certa, extrai os argumentos, pergunta o que falta, mantém o contexto (“e em GO?”), executa pelo mesmo executor (permissão + auditoria) e explica o resultado. Dois motores atrás da mesma interface: tool calling compatível com OpenAI (`GATEWAY_LLM_API_KEY`) e um motor de intenção determinístico que mantém os testes exatos. |
 | **Conversas armazenadas** | Cada conversa fica salva por usuário (SQLite), com as chamadas, resultados e ids de correlação; dá para reabrir, renomear ou excluir pela barra lateral e responder uma pergunta pendente dias depois. Isolada por dono: o id da conversa de outra pessoa responde 404. |
 | **Baseline determinístico de intenção** | `meta.suggest_tool` ordena as tools para um pedido em PT/EN, com as razões. É o piso contra o qual os roteadores com LLM são medidos no [`llm-routing-eval-lab`](https://github.com/murilo-bassan/llm-routing-eval-lab) ([ADR 0006](docs/adr/0006-deterministic-intent-baseline.md)). |
 | **Cuidados de produção** | Proteção contra CSRF, CSP estrita, scrypt, rate limiting, imagem Docker sem root com healthcheck, CI em matriz + smoke test do container. |
