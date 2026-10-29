@@ -104,6 +104,14 @@ def _money(v: float, lang: Lang) -> str:
     return "R$ " + (s.replace(",", "X").replace(".", ",").replace("X", ".") if lang == "pt" else s)
 
 
+_FLAG_WORDS = {
+    "pt": {"past_end_date": "prazo vencido", "low_execution": "pouco dinheiro liberado",
+           "thin_counterpart": "contrapartida baixa", "late_report": "prestação de contas atrasada"},
+    "en": {"past_end_date": "past its end date", "low_execution": "little money released",
+           "thin_counterpart": "low local contribution", "late_report": "overdue report"},
+}
+
+
 def explain(tool: str, result: Any, lang: Lang) -> str:
     pt = lang == "pt"
     if tool == "invoices.validate_tax_id":
@@ -126,8 +134,9 @@ def explain(tool: str, result: Any, lang: Lang) -> str:
     if tool == "grants.flag_risks":
         if not result["flagged"]:
             return "Nenhum convênio com sinal de risco." if pt else "No agreement shows a risk signal."
-        top = "; ".join(f"{i['id']} em {i['town']}/{i['state']}: {', '.join(f['code'] for f in i['flags'])}" if pt else
-                        f"{i['id']} in {i['town']}/{i['state']}: {', '.join(f['code'] for f in i['flags'])}" for i in result["items"][:5])
+        flags = _FLAG_WORDS["pt" if pt else "en"]
+        top = "; ".join(f"{i['id']} em {i['town']}/{i['state']}: {', '.join(flags.get(f['code'], f['code']) for f in i['flags'])}" if pt else
+                        f"{i['id']} in {i['town']}/{i['state']}: {', '.join(flags.get(f['code'], f['code']) for f in i['flags'])}" for i in result["items"][:5])
         return (f"{result['flagged']} convênios com sinais de risco (referência {result['as_of']}). Principais: {top}."
                 if pt else f"{result['flagged']} agreements show risk signals (as of {result['as_of']}). Top: {top}.")
     if tool == "grants.search_agreements":
