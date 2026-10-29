@@ -1,142 +1,76 @@
-<div align="center">
-
-# toolgate · mcp-tool-gateway
-
-**One governed MCP server in front of many tool domains.**
-Per-tool RBAC · encrypted secrets · four-eyes dynamic tools · tamper-evident audit trail.
-
-![python](https://img.shields.io/badge/python-3.11%2B-000?style=flat-square&labelColor=000&color=c6ff00)
-![mcp](https://img.shields.io/badge/MCP-2.2-000?style=flat-square&labelColor=000&color=a58bff)
-![tests](https://img.shields.io/badge/tests-102%20passing-000?style=flat-square&labelColor=000&color=c6ff00)
-![license](https://img.shields.io/badge/license-MIT-000?style=flat-square&labelColor=000&color=2a2a2a)
+# toolgate
 
 **English** · [Português](README.pt-BR.md)
 
-<img src="docs/screenshots/chat-history.png" alt="Chat with stored conversations" width="100%">
+A control panel for the tools an AI assistant can use. You decide who can use each tool,
+passwords stay encrypted, and every call is logged so you can check later who did what.
 
-</div>
+![toolgate](docs/screenshots/chat-history.png)
 
----
+## What you can do
 
-## Why this exists
+- **Chat with the tools.** Ask "which grants are overdue in MS?" and the chat picks the right tool, asks for anything missing and explains the result. Conversations are saved.
+- **Control who uses what.** Each role (admin, analyst, auditor) only sees the tools it is allowed to call.
+- **Add new tools without touching code.** Register an HTTP endpoint in the panel; it only goes live after *another* person approves it.
+- **Keep passwords and tokens safe.** They're encrypted and never shown back on screen.
+- **Audit everything.** Each call becomes a log entry with personal data (tax ids, emails, cards) already masked. Entries are chained by hash, so you can tell if someone edited an old one.
 
-Giving an LLM tools is easy. Giving it tools **safely, across teams, with an
-answer to "who called what, with which data, and was it allowed?"** is the
-actual job. This repository is that layer: a single MCP server that every
-client connects to, where every call — from Claude Desktop, from the web panel
-or from another backend — passes through the same door.
+Works with Claude Desktop or any MCP client, plus the web panel.
 
-> All data is synthetic and generated from fixed seeds. Credentials only ever come
-> from the environment or the encrypted secret store, never from the repository.
-
-## What it demonstrates
-
-| Capability | How |
-|---|---|
-| **MCP server with data-driven tools** | Low-level `mcp.server.lowlevel.Server`: tools and their JSON Schemas come from the catalog at request time, so a tool approved in the panel appears on the client's next `tools/list` — no restart. |
-| **One executor for every door** | `resolve → authorize → rate-limit → validate → run → audit`, shared by stdio MCP, panel and service API ([ADR 0001](docs/adr/0001-one-executor-for-every-door.md)). |
-| **Per-tool RBAC** | Roles are data: fnmatch globs over tool names + a closed set of admin permissions. Clients only *see* tools they can call ([ADR 0003](docs/adr/0003-roles-as-data.md)). |
-| **Governed dynamic tools** | HTTP endpoints registered as JSON, validated (schema, https, no private IPs, no literal credentials), approved by a *different* person ([ADR 0004](docs/adr/0004-dynamic-tools-with-four-eyes.md)). |
-| **Secrets done right** | Fernet at rest, `{{secret:name}}` references, resolved per caller at call time, never shown back. |
-| **Tamper-evident audit** | SHA-256 hash chain over masked events; the panel verifies it live ([ADR 0005](docs/adr/0005-hash-chained-audit.md)). Every correlation id opens the whole request in the trail. |
-| **PII masking** | CPF/CNPJ/e-mail/phone/card/tokens masked *before* storage, keeping enough suffix for support. |
-| **Chat over governed tools** | `/api/chat` routes a PT/EN message to a tool, extracts arguments, asks follow-ups for what is missing, keeps context (“and in GO?”), executes through the same executor (RBAC + audit) and explains the result. Two engines behind one interface: OpenAI-compatible tool calling (`GATEWAY_LLM_API_KEY`) and a deterministic intent engine that keeps the tests exact. |
-| **Stored conversations** | Every chat is saved per user (SQLite), with its tool calls, results and correlation ids; reopen, rename or delete from the sidebar, and answer a pending follow-up days later. Owner-scoped: another user's conversation id answers 404. |
-| **Deterministic intent baseline** | `meta.suggest_tool` ranks tools for a PT/EN request with reasons — the floor LLM routers are benchmarked against in [`llm-routing-eval-lab`](https://github.com/murilo-bassan/llm-routing-eval-lab) ([ADR 0006](docs/adr/0006-deterministic-intent-baseline.md)). |
-| **Production hygiene** | CSRF guard, strict CSP, scrypt, rate limiting, non-root Docker image with healthcheck, CI matrix + container smoke test. |
-
-## Architecture
-
-```mermaid
-flowchart LR
-  subgraph Clients
-    A[Claude Desktop / any MCP client]
-    B[Web panel]
-    C[Backend service]
-  end
-  A -- stdio JSON-RPC --> S[server.py<br/>low-level MCP Server]
-  B -- cookie + CSRF header --> P[web/app.py<br/>FastAPI]
-  C -- X-API-Key --> P
-  S --> E{{executor.execute}}
-  P --> E
-  E --> R[access: role globs]
-  E --> L[rate limit]
-  E --> V[JSON Schema]
-  E --> T[(catalog)]
-  T --> N[native tools<br/>invoices · grants · meta · registry]
-  T --> D[dynamic HTTP tools<br/>approved revisions]
-  D -. "{{secret:x}}" .-> K[(Fernet secrets)]
-  E --> AU[(hash-chained audit<br/>masked payloads)]
-```
-
-## Quick start
+## Running it
 
 ```bash
 git clone https://github.com/murilo-bassan/mcp-tool-gateway.git
 cd mcp-tool-gateway
 pip install -r requirements-dev.txt
 
-python -m pytest                      # 102 tests, ~20 s, includes a real stdio MCP round-trip
-python scripts/demo_traffic.py        # optional: fill the panel with activity
-python -m uvicorn web.app:app --port 8600   # panel → http://localhost:8600 (admin/admin)
+python -m pytest                              # tests
+python scripts/demo_traffic.py                # optional: sample activity
+python -m uvicorn web.app:app --port 8600     # http://localhost:8600
 ```
 
-Demo users: `admin/admin`, `analyst/analyst`, `auditor/auditor`. The UI switches between EN and PT-BR.
+Test logins: `admin/admin`, `analyst/analyst` and `auditor/auditor`. Also runs with `docker compose up --build`.
 
-Talk MCP to it from the terminal, through the real protocol:
+To use it in Claude Desktop, copy [`docs/claude_desktop_config.example.json`](docs/claude_desktop_config.example.json).
+To try it from the terminal:
 
 ```bash
 python scripts/mcp_call.py list
 python scripts/mcp_call.py call invoices.validate_tax_id '{"tax_id": "11.222.333/0001-81"}'
-python scripts/mcp_call.py suggest "which agreements are overdue in MS?"
 ```
 
-Or plug it into Claude Desktop with [`docs/claude_desktop_config.example.json`](docs/claude_desktop_config.example.json).
-Docker: `docker compose up --build`.
+The chat works without any model. To use an LLM, set `GATEWAY_LLM_API_KEY`, `GATEWAY_LLM_BASE_URL`
+and `GATEWAY_LLM_MODEL` (any OpenAI-compatible API).
 
-## Tool domains (synthetic)
+## How it works
 
-| Domain | Tools | Notes |
-|---|---|---|
-| `invoices.*` | `validate_tax_id`, `search`, `get`, `compute_withholding` | Real CPF/CNPJ check-digit algorithms; illustrative (not legal) withholding table with a line-by-line explanation. |
-| `grants.*` | `search_agreements`, `get_agreement`, `summary_by_state`, `flag_risks` | 240 synthetic public-transfer agreements; deterministic risk rules. |
-| `meta.*` | `whoami`, `list_tools`, `suggest_tool` | Discovery, filtered by role. |
-| `registry.*` | `list`, `propose`, `review` | The governance flow, available over MCP too. |
-
-## Screens
-
-| Console | Audit trail |
-|---|---|
-| <img src="docs/screenshots/console.png" alt="Console"> | <img src="docs/screenshots/audit.png" alt="Audit"> |
-| **Registry** | **Access** |
-| <img src="docs/screenshots/registry.png" alt="Registry"> | <img src="docs/screenshots/access.png" alt="Access"> |
-
-## Layout
+Every call, whether it comes from Claude Desktop, the panel or another system, goes through the same path:
+check permission, apply the rate limit, validate the arguments, run, log.
+No entry point skips those steps.
 
 ```
 gateway/
-  config.py        settings from env, swappable in tests
-  store.py         SQLite (WAL), schema, transactions
-  access.py        principals, roles, sessions, API keys, scrypt
-  secrets_store.py Fernet secrets + {{secret:x}} rendering
-  catalog.py       ToolSpec, @native, lookup (native + dynamic)
-  registry.py      dynamic tool lifecycle, validation, HTTP execution
-  executor.py      the single door
-  audit.py         hash chain, search, stats
-  masking.py       PII/credential masking
-  intents.py       deterministic tool suggestion
-  chat.py          deterministic (and optional LLM) chat over the executor
-  conversations.py owner-scoped stored conversations
-  ratelimit.py     sliding window
-  domains/         invoices, grants, meta, governance, synthetic data
-server.py          stdio MCP server
-web/               FastAPI panel + vanilla JS UI (VOID theme)
-scripts/           mcp_call.py (MCP client), demo_traffic.py
-docs/              ADRs, security model, screenshots
+  executor.py   the single path for every call
+  access.py     users, roles and permissions
+  registry.py   tools registered from the panel
+  audit.py      hash-chained log
+  masking.py    personal data masking
+  chat.py       the chat
+  domains/      sample tools (invoices and grants)
+server.py       MCP server
+web/            web panel
 ```
 
-See [`docs/security.md`](docs/security.md) for the threat model and what is deliberately out of scope.
+Design decisions are in [`docs/adr`](docs/adr) and the security model in [`docs/security.md`](docs/security.md).
 
----
+## Screens
 
-<sub>Part of an AI engineering portfolio — see [ai-engineering-portfolio](https://github.com/murilo-bassan/ai-engineering-portfolio). MIT licensed.</sub>
+| Console | Audit log |
+|---|---|
+| ![](docs/screenshots/console.png) | ![](docs/screenshots/audit.png) |
+| **Registered tools** | **Permissions** |
+| ![](docs/screenshots/registry.png) | ![](docs/screenshots/access.png) |
+
+**Stack:** Python, FastAPI, MCP, SQLite, Docker
+
+All data is made up. MIT license.

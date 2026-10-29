@@ -1,142 +1,77 @@
-<div align="center">
-
-# toolgate · mcp-tool-gateway
-
-**Um único servidor MCP governado na frente de vários domínios de tools.**
-Permissão por tool · secrets criptografados · tools dinâmicas com revisão a quatro olhos · trilha de auditoria à prova de adulteração.
-
-![python](https://img.shields.io/badge/python-3.11%2B-000?style=flat-square&labelColor=000&color=c6ff00)
-![mcp](https://img.shields.io/badge/MCP-2.2-000?style=flat-square&labelColor=000&color=a58bff)
-![testes](https://img.shields.io/badge/testes-102%20passando-000?style=flat-square&labelColor=000&color=c6ff00)
-![licença](https://img.shields.io/badge/licen%C3%A7a-MIT-000?style=flat-square&labelColor=000&color=2a2a2a)
+# toolgate
 
 [English](README.md) · **Português**
 
-<img src="docs/screenshots/chat-history.png" alt="Chat com conversas armazenadas" width="100%">
+Um painel de controle para as ferramentas que um assistente de IA pode usar.
+Você decide quem usa cada ferramenta, as senhas ficam criptografadas e toda chamada
+fica registrada, para conferir depois quem fez o quê.
 
-</div>
+![toolgate](docs/screenshots/chat-history.png)
 
----
+## O que dá para fazer
 
-## Por que existe
+- **Conversar com as ferramentas.** Pergunte "quais convênios estão atrasados em MS?" e o chat escolhe a ferramenta certa, pede o que faltar e explica o resultado. As conversas ficam salvas.
+- **Controlar quem usa o quê.** Cada perfil (admin, analista, auditor) só enxerga as ferramentas que tem permissão para chamar.
+- **Adicionar ferramentas novas sem mexer no código.** Você cadastra um endpoint HTTP pelo painel e ele só entra no ar depois que *outra* pessoa aprova.
+- **Guardar senhas e tokens com segurança.** Ficam criptografados e nunca aparecem de volta na tela.
+- **Auditar tudo.** Cada chamada vira um registro com dados pessoais (CPF, e-mail, cartão) já mascarados. Os registros são encadeados por hash, então dá para ver se alguém editou um evento antigo.
 
-Dar tools a um LLM é fácil. O trabalho de verdade é dar **com segurança, entre
-equipes, e conseguir responder "quem chamou o quê, com quais dados, e era
-permitido?"**. Este repositório é essa camada: um único servidor MCP ao qual
-todo cliente se conecta, onde toda chamada (do Claude Desktop, do painel web ou
-de outro backend) passa pela mesma porta.
+Funciona com o Claude Desktop ou qualquer cliente MCP, além do painel web.
 
-> Todos os dados são sintéticos, gerados com sementes fixas. Credenciais só vêm do
-> ambiente ou do cofre de secrets criptografado, nunca do repositório.
-
-## O que demonstra
-
-| Capacidade | Como |
-|---|---|
-| **Servidor MCP com tools vindas de dados** | `mcp.server.lowlevel.Server` de baixo nível: as tools e seus JSON Schemas saem do catálogo a cada requisição, então uma tool aprovada no painel aparece no próximo `tools/list` do cliente, sem reiniciar. |
-| **Um executor para todas as portas** | `resolver → autorizar → limitar taxa → validar → executar → auditar`, o mesmo para MCP via stdio, painel e API de serviço ([ADR 0001](docs/adr/0001-one-executor-for-every-door.md)). |
-| **Permissão por tool** | Papéis são dados: globs fnmatch sobre nomes de tools + um conjunto fechado de permissões administrativas. O cliente só *vê* as tools que pode chamar ([ADR 0003](docs/adr/0003-roles-as-data.md)). |
-| **Tools dinâmicas governadas** | Endpoints HTTP cadastrados como JSON, validados (schema, https, sem IP privado, sem credencial literal) e aprovados por **outra** pessoa ([ADR 0004](docs/adr/0004-dynamic-tools-with-four-eyes.md)). |
-| **Secrets do jeito certo** | Fernet em repouso, referências `{{secret:nome}}` resolvidas por quem chama no momento da chamada, nunca exibidas de volta. |
-| **Auditoria à prova de adulteração** | Cadeia de hashes SHA-256 sobre eventos já mascarados; o painel verifica ao vivo ([ADR 0005](docs/adr/0005-hash-chained-audit.md)). Cada id de correlação abre a requisição inteira na trilha. |
-| **Mascaramento de dados pessoais** | CPF, CNPJ, e-mail, telefone, cartão e tokens mascarados *antes* de gravar, mantendo o final suficiente para o suporte. |
-| **Chat sobre as tools governadas** | `/api/chat` leva uma mensagem em PT ou EN até a tool certa, extrai os argumentos, pergunta o que falta, mantém o contexto (“e em GO?”), executa pelo mesmo executor (permissão + auditoria) e explica o resultado. Dois motores atrás da mesma interface: tool calling compatível com OpenAI (`GATEWAY_LLM_API_KEY`) e um motor de intenção determinístico que mantém os testes exatos. |
-| **Conversas armazenadas** | Cada conversa fica salva por usuário (SQLite), com as chamadas, resultados e ids de correlação; dá para reabrir, renomear ou excluir pela barra lateral e responder uma pergunta pendente dias depois. Isolada por dono: o id da conversa de outra pessoa responde 404. |
-| **Baseline determinístico de intenção** | `meta.suggest_tool` ordena as tools para um pedido em PT/EN, com as razões. É o piso contra o qual os roteadores com LLM são medidos no [`llm-routing-eval-lab`](https://github.com/murilo-bassan/llm-routing-eval-lab) ([ADR 0006](docs/adr/0006-deterministic-intent-baseline.md)). |
-| **Cuidados de produção** | Proteção contra CSRF, CSP estrita, scrypt, rate limiting, imagem Docker sem root com healthcheck, CI em matriz + smoke test do container. |
-
-## Arquitetura
-
-```mermaid
-flowchart LR
-  subgraph Clientes
-    A[Claude Desktop / qualquer cliente MCP]
-    B[Painel web]
-    C[Serviço backend]
-  end
-  A -- JSON-RPC via stdio --> S[server.py<br/>servidor MCP de baixo nível]
-  B -- cookie + cabeçalho CSRF --> P[web/app.py<br/>FastAPI]
-  C -- X-API-Key --> P
-  S --> E{{executor.execute}}
-  P --> E
-  E --> R[acesso: globs do papel]
-  E --> L[limite de taxa]
-  E --> V[JSON Schema]
-  E --> T[(catálogo)]
-  T --> N[tools nativas<br/>invoices · grants · meta · registry]
-  T --> D[tools HTTP dinâmicas<br/>revisões aprovadas]
-  D -. "{{secret:x}}" .-> K[(secrets Fernet)]
-  E --> AU[(auditoria encadeada<br/>payloads mascarados)]
-```
-
-## Como rodar
+## Rodando
 
 ```bash
 git clone https://github.com/murilo-bassan/mcp-tool-gateway.git
 cd mcp-tool-gateway
 pip install -r requirements-dev.txt
 
-python -m pytest                      # 102 testes, ~20 s, inclui uma ida e volta MCP real via stdio
-python scripts/demo_traffic.py        # opcional: gera atividade para o painel
-python -m uvicorn web.app:app --port 8600   # painel → http://localhost:8600 (admin/admin)
+python -m pytest                              # testes
+python scripts/demo_traffic.py                # opcional: gera atividade de exemplo
+python -m uvicorn web.app:app --port 8600     # http://localhost:8600
 ```
 
-Usuários de demonstração: `admin/admin`, `analyst/analyst`, `auditor/auditor`. A interface tem opção PT-BR/EN.
+Logins de teste: `admin/admin`, `analyst/analyst` e `auditor/auditor`. Também roda com `docker compose up --build`.
 
-Falando MCP pelo terminal, pelo protocolo de verdade:
+Para usar no Claude Desktop, copie [`docs/claude_desktop_config.example.json`](docs/claude_desktop_config.example.json).
+Para testar pelo terminal:
 
 ```bash
 python scripts/mcp_call.py list
 python scripts/mcp_call.py call invoices.validate_tax_id '{"tax_id": "11.222.333/0001-81"}'
-python scripts/mcp_call.py suggest "quais convênios estão atrasados em MS?"
 ```
 
-Ou conecte ao Claude Desktop com [`docs/claude_desktop_config.example.json`](docs/claude_desktop_config.example.json).
-Docker: `docker compose up --build`.
+O chat funciona sem modelo nenhum. Para usar um LLM, defina `GATEWAY_LLM_API_KEY`, `GATEWAY_LLM_BASE_URL`
+e `GATEWAY_LLM_MODEL` (qualquer API compatível com a da OpenAI).
 
-## Domínios de tools (sintéticos)
+## Como funciona
 
-| Domínio | Tools | Observações |
-|---|---|---|
-| `invoices.*` | `validate_tax_id`, `search`, `get`, `compute_withholding` | Algoritmos reais de dígito verificador de CPF/CNPJ; tabela de retenção ilustrativa (não é orientação fiscal) com explicação linha a linha. |
-| `grants.*` | `search_agreements`, `get_agreement`, `summary_by_state`, `flag_risks` | 240 convênios de transferência sintéticos; regras de risco determinísticas. |
-| `meta.*` | `whoami`, `list_tools`, `suggest_tool` | Descoberta, filtrada pelo papel. |
-| `registry.*` | `list`, `propose`, `review` | O fluxo de governança, disponível também via MCP. |
-
-## Telas
-
-| Console | Trilha de auditoria |
-|---|---|
-| <img src="docs/screenshots/console.png" alt="Console"> | <img src="docs/screenshots/audit.png" alt="Auditoria"> |
-| **Registro** | **Acesso** |
-| <img src="docs/screenshots/registry.png" alt="Registro"> | <img src="docs/screenshots/access.png" alt="Acesso"> |
-
-## Estrutura
+Toda chamada, venha do Claude Desktop, do painel ou de outro sistema, passa pelo mesmo caminho:
+checa a permissão, aplica o limite de uso, valida os argumentos, executa e registra.
+Nenhuma porta de entrada pula essas etapas.
 
 ```
 gateway/
-  config.py        configurações via env, trocáveis nos testes
-  store.py         SQLite (WAL), schema, transações
-  access.py        usuários e serviços, papéis, sessões, chaves de API, scrypt
-  secrets_store.py secrets Fernet + resolução de {{secret:x}}
-  catalog.py       ToolSpec, @native, busca (nativas + dinâmicas)
-  registry.py      ciclo de vida das tools dinâmicas, validação, execução HTTP
-  executor.py      a porta única
-  audit.py         cadeia de hashes, busca, estatísticas
-  masking.py       mascaramento de dados pessoais e credenciais
-  intents.py       sugestão determinística de tool
-  chat.py          chat determinístico (e com LLM, opcional) sobre o executor
-  conversations.py conversas armazenadas por dono
-  ratelimit.py     janela deslizante
-  domains/         invoices, grants, meta, governança, dados sintéticos
-server.py          servidor MCP via stdio
-web/               painel FastAPI + interface em JS puro (tema VOID)
-scripts/           mcp_call.py (cliente MCP), demo_traffic.py
-docs/              ADRs, modelo de segurança, capturas de tela
+  executor.py   o caminho único de toda chamada
+  access.py     usuários, perfis e permissões
+  registry.py   ferramentas cadastradas pelo painel
+  audit.py      registro encadeado por hash
+  masking.py    mascaramento de dados pessoais
+  chat.py       o chat
+  domains/      as ferramentas de exemplo (notas fiscais e convênios)
+server.py       servidor MCP
+web/            painel web
 ```
 
-Veja [`docs/security.md`](docs/security.md) para o modelo de ameaças e o que ficou fora de escopo de propósito (em inglês).
+As decisões de projeto estão em [`docs/adr`](docs/adr) e o modelo de segurança em [`docs/security.md`](docs/security.md).
 
----
+## Telas
 
-<sub>Parte de um portfólio de engenharia de IA: veja [ai-engineering-portfolio](https://github.com/murilo-bassan/ai-engineering-portfolio). Licença MIT.</sub>
+| Console | Auditoria |
+|---|---|
+| ![](docs/screenshots/console.png) | ![](docs/screenshots/audit.png) |
+| **Ferramentas cadastradas** | **Permissões** |
+| ![](docs/screenshots/registry.png) | ![](docs/screenshots/access.png) |
+
+**Stack:** Python, FastAPI, MCP, SQLite, Docker
+
+Os dados são fictícios. Licença MIT.
